@@ -1,0 +1,41 @@
+{
+  "manifest_version": 2,
+  "name": "Session Snapshots & Bookmark Search",
+  "short_name": "Session Snapshots",
+  "version": "0.1.0",
+  "description": "Save and restore tagged Firefox tab sessions, including pinned tabs, and search bookmarks locally.",
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "96": "assets/icons/icon-96.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "permissions": [
+    "tabs",
+    "bookmarks",
+    "storage",
+    "downloads",
+    "unlimitedStorage"
+  ],
+  "browser_action": {
+    "default_title": "Session Snapshots",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png",
+      "48": "assets/icons/icon-48.png"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "{4c06105c-65c9-4be4-87f7-cb793a16e43b}",
+      "strict_min_version": "91.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}

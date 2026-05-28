@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Session Snapshots</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Firefox session utility</p>
+          <h1>Session Snapshots</h1>
+          <p class="hero-copy">Capture tab windows, pinned tabs, tagged timelines, imports, restores, and bookmark search.</p>
+        </div>
+        <div class="hero-badge" id="snapshotCounter">0 snapshots</div>
+      </header>
+
+      <nav class="tabs" aria-label="Main sections">
+        <button class="tab-button active" type="button" data-panel="sessions">Snapshots</button>
+        <button class="tab-button" type="button" data-panel="import">Import / Restore</button>
+        <button class="tab-button" type="button" data-panel="search">Bookmark Search</button>
+      </nav>
+
+      <main>
+        <section class="panel active" id="panel-sessions" aria-labelledby="snapshots-heading">
+          <div class="card capture-card">
+            <div class="section-title-row">
+              <div>
+                <h2 id="snapshots-heading">Capture a point-in-time session</h2>
+                <p>Name it, tag it, store it in a local timeline, and optionally download a .ffsession.json file.</p>
+              </div>
+            </div>
+
+            <label class="field-label" for="snapshotName">Snapshot name</label>
+            <input id="snapshotName" type="text" placeholder="e.g. Research workspace before refactor" autocomplete="off" />
+
+            <label class="field-label" for="snapshotTags">Tags</label>
+            <input id="snapshotTags" type="text" placeholder="work, research, project-x" autocomplete="off" />
+
+            <label class="checkbox-row">
+              <input id="downloadAfterCapture" type="checkbox" checked />
+              <span>Download snapshot file after capture</span>
+            </label>
+
+            <button class="primary-button" id="captureSnapshot" type="button">Capture current Firefox session</button>
+          </div>
+
+          <div class="toolbar">
+            <label class="field-label inline" for="tagFilter">Filter timeline</label>
+            <select id="tagFilter">
+              <option value="">All tags</option>
+            </select>
+            <button class="secondary-button" id="refreshSnapshots" type="button">Refresh</button>
+          </div>
+
+          <div id="snapshotList" class="snapshot-list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel" id="panel-import" aria-labelledby="import-heading">
+          <div class="card">
+            <h2 id="import-heading">Import a session snapshot file</h2>
+            <p>Choose a <strong>.ffsession.json</strong> file exported by this extension. You can restore it immediately or add it to your local timeline.</p>
+            <input id="snapshotFile" type="file" accept=".ffsession.json,application/json" />
+          </div>
+
+          <div id="importSummary" class="import-summary empty-state">
+            No snapshot file selected yet.
+          </div>
+        </section>
+
+        <section class="panel" id="panel-search" aria-labelledby="search-heading">
+          <div class="card search-card">
+            <div class="section-title-row">
+              <div>
+                <h2 id="search-heading">Unified bookmark search</h2>
+                <p>Search bookmark title, URL, site hostname, and folder path with typo-tolerant ranking.</p>
+              </div>
+              <button class="secondary-button" id="refreshBookmarks" type="button">Refresh index</button>
+            </div>
+            <input id="bookmarkQuery" class="search-input" type="search" placeholder="Search bookmarks by title, site, URL, or folder…" autocomplete="off" />
+            <div class="search-meta" id="bookmarkMeta">Bookmark index not loaded yet.</div>
+          </div>
+          <div id="bookmarkResults" class="bookmark-results" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <footer>
+        <div id="status" role="status" aria-live="polite"></div>
+      </footer>
+    </div>
+
+    <script src="core.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

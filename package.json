@@ -1,0 +1,22 @@
+{
+  "name": "firefox-session-snapshots-bookmark-search",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Firefox WebExtension for tagged session snapshots, restore/import/export, and unified bookmark search.",
+  "scripts": {
+    "icons": "python3 tools/make_icons.py",
+    "validate": "python3 tools/validate.py",
+    "package": "python3 tools/package.py",
+    "test": "node tests/core.test.js",
+    "check": "node --check src/core.js && node --check src/popup.js && npm test"
+  },
+  "keywords": [
+    "firefox",
+    "webextension",
+    "session",
+    "tabs",
+    "bookmarks",
+    "productivity"
+  ],
+  "license": "MIT"
+}
