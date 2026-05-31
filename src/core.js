@@ -9,6 +9,10 @@
   const SNAPSHOT_SCHEMA = "firefox-session-snapshot";
   const SNAPSHOT_SCHEMA_VERSION = 1;
   const SNAPSHOT_FILE_EXTENSION = "ffsession.json";
+  const BOOKMARK_SNAPSHOT_SCHEMA = "firefox-bookmark-snapshot";
+  const BOOKMARK_SNAPSHOT_SCHEMA_VERSION = 1;
+  const BOOKMARK_SNAPSHOT_FILE_EXTENSION = "ffbookmarks.json";
+  const RESTORE_FALLBACK_URL = "about:newtab";
   const MAX_TAGS = 16;
 
   function createId(prefix = "snap") {
@@ -219,10 +223,172 @@
     return { valid: errors.length === 0, errors };
   }
 
+  function normalizeWindowState(state) {
+    return ["normal", "minimized", "maximized", "fullscreen"].includes(state) ? state : "normal";
+  }
+
+  function restorableUrl(url) {
+    if (!url || typeof url !== "string") return RESTORE_FALLBACK_URL;
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) return RESTORE_FALLBACK_URL;
+
+    try {
+      const parsed = new URL(trimmedUrl);
+      if (["http:", "https:", "ftp:", "file:"].includes(parsed.protocol)) return trimmedUrl;
+      if (parsed.protocol === "about:" && isSafeAboutRestoreUrl(trimmedUrl)) return trimmedUrl;
+    } catch (_error) {
+      if (isSafeAboutRestoreUrl(trimmedUrl)) return trimmedUrl;
+    }
+    return RESTORE_FALLBACK_URL;
+  }
+
+  function isSafeAboutRestoreUrl(url) {
+    return /^(about:blank|about:newtab|about:home|about:privatebrowsing)$/i.test(url);
+  }
+
+  function wasUrlSubstituted(originalUrl, restoredUrl) {
+    const original = typeof originalUrl === "string" && originalUrl.trim() ? originalUrl.trim() : RESTORE_FALLBACK_URL;
+    return original !== restoredUrl;
+  }
+
   function fileNameForSnapshot(snapshot) {
     const baseName = sanitizeFileName(snapshot && snapshot.name);
     const timestamp = safeDateForFileName(snapshot && snapshot.createdAt);
     return `${baseName}-${timestamp}.${SNAPSHOT_FILE_EXTENSION}`;
+  }
+
+  function createBookmarkSnapshotFromTree(tree, metadata = {}) {
+    const createdAt = metadata.createdAt || new Date().toISOString();
+    const roots = normalizeBookmarkSnapshotNodes(tree);
+    const snapshot = {
+      schema: BOOKMARK_SNAPSHOT_SCHEMA,
+      schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+      id: metadata.id || createId("bookmarks"),
+      name: String(metadata.name || `Firefox bookmarks ${createdAt}`).trim(),
+      createdAt,
+      source: {
+        browser: "Firefox",
+        extension: "Session Snapshots & Bookmark Search",
+        format: BOOKMARK_SNAPSHOT_FILE_EXTENSION
+      },
+      roots
+    };
+    snapshot.stats = countBookmarkSnapshotItems(snapshot);
+    return snapshot;
+  }
+
+  function normalizeBookmarkSnapshotNodes(nodes) {
+    const bookmarkNodes = Array.isArray(nodes) ? nodes : [];
+    return bookmarkNodes
+      .filter((node) => node && typeof node === "object")
+      .map((node) => {
+        const title = String(node.title || "").trim();
+        const normalized = {
+          title,
+          dateAdded: typeof node.dateAdded === "number" ? node.dateAdded : 0,
+          dateGroupModified: typeof node.dateGroupModified === "number" ? node.dateGroupModified : 0
+        };
+
+        if (typeof node.url === "string" && node.url) {
+          normalized.type = "bookmark";
+          normalized.url = node.url;
+          return normalized;
+        }
+
+        normalized.type = "folder";
+        normalized.children = normalizeBookmarkSnapshotNodes(node.children || []);
+        return normalized;
+      });
+  }
+
+  function countBookmarkSnapshotItems(snapshotOrNodes) {
+    const roots = Array.isArray(snapshotOrNodes)
+      ? snapshotOrNodes
+      : Array.isArray(snapshotOrNodes && snapshotOrNodes.roots)
+        ? snapshotOrNodes.roots
+        : [];
+    const totals = { bookmarkCount: 0, folderCount: 0, rootCount: roots.length };
+
+    function visit(node) {
+      if (!node || typeof node !== "object") return;
+      if (typeof node.url === "string" && node.url) {
+        totals.bookmarkCount += 1;
+        return;
+      }
+      totals.folderCount += 1;
+      if (Array.isArray(node.children)) node.children.forEach(visit);
+    }
+
+    roots.forEach(visit);
+    return totals;
+  }
+
+  function validateBookmarkSnapshot(value) {
+    const errors = [];
+    if (!value || typeof value !== "object") {
+      return { valid: false, errors: ["Bookmark snapshot file must contain a JSON object."] };
+    }
+    if (value.schema !== BOOKMARK_SNAPSHOT_SCHEMA) {
+      errors.push(`Unsupported bookmark schema. Expected ${BOOKMARK_SNAPSHOT_SCHEMA}.`);
+    }
+    if (value.schemaVersion !== BOOKMARK_SNAPSHOT_SCHEMA_VERSION) {
+      errors.push(`Unsupported bookmark schema version. Expected ${BOOKMARK_SNAPSHOT_SCHEMA_VERSION}.`);
+    }
+    if (!value.id || typeof value.id !== "string") {
+      errors.push("Bookmark snapshot is missing a string id.");
+    }
+    if (!Array.isArray(value.roots) || value.roots.length === 0) {
+      errors.push("Bookmark snapshot must contain at least one root node.");
+    }
+
+    const roots = Array.isArray(value.roots) ? value.roots : [];
+    roots.forEach((root, index) => validateBookmarkNode(root, `Root ${index + 1}`, errors));
+    return { valid: errors.length === 0, errors };
+  }
+
+  function validateBookmarkNode(node, path, errors) {
+    if (!node || typeof node !== "object") {
+      errors.push(`${path} must be an object.`);
+      return;
+    }
+    if (typeof node.url === "string" && node.url) {
+      return;
+    }
+    if (node.children !== undefined && !Array.isArray(node.children)) {
+      errors.push(`${path} children must be an array.`);
+      return;
+    }
+    (node.children || []).forEach((child, index) => validateBookmarkNode(child, `${path} / ${child && child.title ? child.title : `item ${index + 1}`}`, errors));
+  }
+
+  function fileNameForBookmarkSnapshot(snapshot) {
+    const baseName = sanitizeFileName(snapshot && snapshot.name ? snapshot.name : "firefox-bookmarks");
+    const timestamp = safeDateForFileName(snapshot && snapshot.createdAt);
+    return `${baseName}-${timestamp}.${BOOKMARK_SNAPSHOT_FILE_EXTENSION}`;
+  }
+
+  function bookmarkSnapshotPreviewItems(snapshot, limit = 30) {
+    const roots = Array.isArray(snapshot && snapshot.roots) ? snapshot.roots : [];
+    const maxItems = Number.isFinite(limit) ? Math.max(0, limit) : 30;
+    const items = [];
+
+    function visit(node, path) {
+      if (!node || items.length >= maxItems) return;
+      const title = String(node.title || "").trim();
+      if (typeof node.url === "string" && node.url) {
+        items.push({ type: "bookmark", title: title || node.url, url: node.url, path: path.join(" / ") });
+        return;
+      }
+      const nextPath = title ? path.concat(title) : path;
+      if (title) items.push({ type: "folder", title, path: nextPath.join(" / ") });
+      for (const child of node.children || []) {
+        if (items.length >= maxItems) break;
+        visit(child, nextPath);
+      }
+    }
+
+    roots.forEach((root) => visit(root, []));
+    return items;
   }
 
   function flattenBookmarks(nodes, parentPath = []) {
@@ -235,18 +401,22 @@
       const nextPath = title ? parentPath.concat(title) : parentPath;
 
       if (typeof node.url === "string" && node.url) {
-        const path = parentPath.join(" / ");
+        const folderSegments = parentPath.filter(Boolean);
+        const path = folderSegments.join(" / ");
+        const folderName = folderSegments.length > 0 ? folderSegments[folderSegments.length - 1] : "Bookmarks root";
         const bookmark = {
           id: String(node.id || ""),
           parentId: node.parentId ? String(node.parentId) : "",
           title: title || node.url,
           url: node.url,
           path,
+          folderPath: path,
+          folderName,
           dateAdded: typeof node.dateAdded === "number" ? node.dateAdded : 0,
           dateGroupModified: typeof node.dateGroupModified === "number" ? node.dateGroupModified : 0
         };
         bookmark.host = extractHostname(bookmark.url);
-        bookmark.searchText = [bookmark.title, bookmark.url, bookmark.host, bookmark.path].join(" ");
+        bookmark.searchText = [bookmark.title, bookmark.url, bookmark.host, bookmark.path, bookmark.folderName].join(" ");
         bookmark.searchTokens = Array.from(new Set(tokenize(bookmark.searchText)));
         results.push(bookmark);
       }
@@ -265,6 +435,11 @@
     } catch (_error) {
       return "";
     }
+  }
+
+  function bookmarkFolderLabel(bookmark) {
+    const path = String((bookmark && (bookmark.folderPath || bookmark.path)) || "").trim();
+    return path || "Bookmarks root";
   }
 
   function searchBookmarks(bookmarks, query, options = {}) {
@@ -470,22 +645,35 @@
   }
 
   const api = {
+    BOOKMARK_SNAPSHOT_SCHEMA,
+    BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+    BOOKMARK_SNAPSHOT_FILE_EXTENSION,
     SNAPSHOT_SCHEMA,
     SNAPSHOT_SCHEMA_VERSION,
     SNAPSHOT_FILE_EXTENSION,
+    RESTORE_FALLBACK_URL,
+    bookmarkFolderLabel,
     buildSnapshotLinks,
     clonePlainObject,
+    countBookmarkSnapshotItems,
     countSnapshotTabs,
+    createBookmarkSnapshotFromTree,
     createId,
     createSnapshotFromWindows,
+    bookmarkSnapshotPreviewItems,
+    fileNameForBookmarkSnapshot,
     fileNameForSnapshot,
     flattenBookmarks,
+    normalizeWindowState,
     normalizeTags,
     normalizeText,
+    restorableUrl,
     sanitizeFileName,
     searchBookmarks,
     tokenize,
-    validateSnapshot
+    validateBookmarkSnapshot,
+    validateSnapshot,
+    wasUrlSubstituted
   };
 
   if (typeof module !== "undefined" && module.exports) {

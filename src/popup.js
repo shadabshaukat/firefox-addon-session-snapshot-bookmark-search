@@ -4,11 +4,15 @@
 
   const core = SessionSnapCore;
   const api = typeof browser !== "undefined" ? browser : null;
+  const RESTORE_MESSAGE_TYPE = "session-snapshots.restoreSnapshot";
+  const RESTORE_BOOKMARKS_MESSAGE_TYPE = "session-snapshots.restoreBookmarkSnapshot";
   const state = {
     snapshots: [],
+    bookmarkSnapshots: [],
     bookmarkIndex: [],
     bookmarksLoaded: false,
     importedSnapshot: null,
+    importedBookmarkSnapshot: null,
     activePanel: "sessions"
   };
 
@@ -41,6 +45,13 @@
     elements.snapshotFile = document.getElementById("snapshotFile");
     elements.importSummary = document.getElementById("importSummary");
     elements.refreshBookmarks = document.getElementById("refreshBookmarks");
+    elements.bookmarkSnapshotName = document.getElementById("bookmarkSnapshotName");
+    elements.downloadAfterBookmarkCapture = document.getElementById("downloadAfterBookmarkCapture");
+    elements.captureBookmarks = document.getElementById("captureBookmarks");
+    elements.refreshBookmarkSnapshots = document.getElementById("refreshBookmarkSnapshots");
+    elements.bookmarkSnapshotFile = document.getElementById("bookmarkSnapshotFile");
+    elements.bookmarkImportSummary = document.getElementById("bookmarkImportSummary");
+    elements.bookmarkSnapshotList = document.getElementById("bookmarkSnapshotList");
     elements.bookmarkQuery = document.getElementById("bookmarkQuery");
     elements.bookmarkMeta = document.getElementById("bookmarkMeta");
     elements.bookmarkResults = document.getElementById("bookmarkResults");
@@ -65,6 +76,17 @@
     elements.snapshotFile.addEventListener("change", () => runSafely(importSnapshotFile));
     elements.importSummary.addEventListener("click", handleImportAction);
     elements.refreshBookmarks.addEventListener("click", () => runSafely(loadBookmarkIndex));
+    elements.captureBookmarks.addEventListener("click", () => runSafely(captureBookmarkSnapshot));
+    elements.refreshBookmarkSnapshots.addEventListener("click", () =>
+      runSafely(async () => {
+        await loadBookmarkSnapshots();
+        renderBookmarkSnapshots();
+        setStatus("success", "Bookmark snapshots refreshed.");
+      })
+    );
+    elements.bookmarkSnapshotFile.addEventListener("change", () => runSafely(importBookmarkSnapshotFile));
+    elements.bookmarkImportSummary.addEventListener("click", handleBookmarkImportAction);
+    elements.bookmarkSnapshotList.addEventListener("click", handleBookmarkSnapshotAction);
     elements.bookmarkQuery.addEventListener("input", debounce(renderBookmarkResults, 120));
     elements.bookmarkQuery.addEventListener("keydown", handleBookmarkKeyboard);
     elements.bookmarkResults.addEventListener("click", handleBookmarkAction);
@@ -82,6 +104,12 @@
     if (panelName === "search" && !state.bookmarksLoaded) {
       runSafely(loadBookmarkIndex);
     }
+    if (panelName === "search" && state.bookmarkSnapshots.length === 0) {
+      runSafely(async () => {
+        await loadBookmarkSnapshots();
+        renderBookmarkSnapshots();
+      });
+    }
   }
 
   async function loadSnapshots() {
@@ -92,8 +120,20 @@
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }
 
+  async function loadBookmarkSnapshots() {
+    const result = await api.storage.local.get({ bookmarkSnapshots: [] });
+    const snapshots = Array.isArray(result.bookmarkSnapshots) ? result.bookmarkSnapshots : [];
+    state.bookmarkSnapshots = snapshots
+      .filter((snapshot) => core.validateBookmarkSnapshot(snapshot).valid)
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }
+
   async function persistSnapshots() {
     await api.storage.local.set({ snapshots: state.snapshots });
+  }
+
+  async function persistBookmarkSnapshots() {
+    await api.storage.local.set({ bookmarkSnapshots: state.bookmarkSnapshots });
   }
 
   async function captureCurrentSession() {
@@ -134,6 +174,22 @@
   }
 
   async function getAllNormalWindows() {
+    if (!api.windows || typeof api.windows.getAll !== "function") {
+      if (api.tabs && typeof api.tabs.query === "function") {
+        const tabs = await api.tabs.query({});
+        return [
+          {
+            index: 0,
+            type: "normal",
+            state: "normal",
+            focused: true,
+            tabs
+          }
+        ];
+      }
+      throw new Error("This Firefox build does not expose the tabs/windows APIs required to capture a session.");
+    }
+
     try {
       return await api.windows.getAll({ populate: true, windowTypes: ["normal"] });
     } catch (_error) {
@@ -399,111 +455,62 @@
       throw new Error(validation.errors.join(" "));
     }
 
+    const preview = buildSessionPreviewText(snapshot);
+    if (!window.confirm(preview)) {
+      setStatus("", "Session restore cancelled.");
+      return;
+    }
+
     setStatus("", `Restoring ${snapshot.name} into new Firefox window(s)…`);
 
-    let createdWindows = 0;
-    let createdTabs = 0;
-    const orderedWindows = snapshot.windows.slice().sort((a, b) => (a.index || 0) - (b.index || 0));
+    const response = await api.runtime.sendMessage({
+      type: RESTORE_MESSAGE_TYPE,
+      snapshot: core.clonePlainObject(snapshot)
+    });
 
-    for (const windowSnapshot of orderedWindows) {
-      const tabs = windowSnapshot.tabs.slice().sort((a, b) => (a.index || 0) - (b.index || 0));
-      if (tabs.length === 0) continue;
-
-      const firstTab = tabs[0];
-      const createData = {
-        url: restorableUrl(firstTab.url),
-        focused: Boolean(windowSnapshot.focused)
-      };
-      const windowState = normalizeWindowState(windowSnapshot.state);
-      if (windowState) createData.state = windowState;
-
-      const createdWindow = await api.windows.create(createData);
-      createdWindows += 1;
-      const createdWindowTabs = createdWindow.tabs || [];
-      const firstCreatedTab = createdWindowTabs[0];
-      if (firstCreatedTab && firstCreatedTab.id) {
-        await updateTabPinned(firstCreatedTab.id, Boolean(firstTab.pinned));
-        createdTabs += 1;
-      }
-
-      const restoredTabs = [firstCreatedTab].filter(Boolean);
-      for (let index = 1; index < tabs.length; index += 1) {
-        const restoredTab = await createRestoredTab(createdWindow.id, tabs[index], index);
-        restoredTabs[index] = restoredTab;
-        createdTabs += 1;
-      }
-
-      const activeIndex = Math.max(0, tabs.findIndex((tab) => tab.active));
-      const activeTab = restoredTabs[activeIndex] || restoredTabs[0];
-      if (activeTab && activeTab.id) {
-        await api.tabs.update(activeTab.id, { active: true });
-      }
-
-      await updateWindowGeometry(createdWindow.id, windowSnapshot);
+    if (!response || response.ok !== true) {
+      throw new Error((response && response.error) || "The background restore worker did not return a successful response.");
     }
 
-    setStatus("success", `Restored ${createdTabs} tab(s) across ${createdWindows} new window(s). Existing windows were left untouched.`);
+    const result = response.result || {};
+    setStatus(result.failedTabs || result.fallbackTabs ? "warning" : "success", formatRestoreSummary(result));
   }
 
-  async function createRestoredTab(windowId, tabSnapshot, index) {
-    const createData = {
-      windowId,
-      url: restorableUrl(tabSnapshot.url),
-      active: false,
-      index
-    };
+  function buildSessionPreviewText(snapshot) {
+    const stats = core.countSnapshotTabs(snapshot);
+    const lines = [
+      `Restore “${snapshot.name || "session snapshot"}”?`,
+      "",
+      `${stats.tabCount} tab(s), ${stats.pinnedTabCount} pinned, across ${stats.windowCount} window(s) will be restored. Existing windows will be left untouched.`,
+      "",
+      "Tabs to restore:"
+    ];
 
-    if (tabSnapshot.pinned) createData.pinned = true;
-
-    try {
-      return await api.tabs.create(createData);
-    } catch (_error) {
-      delete createData.pinned;
-      const tab = await api.tabs.create(createData);
-      await updateTabPinned(tab.id, Boolean(tabSnapshot.pinned));
-      return tab;
-    }
-  }
-
-  async function updateTabPinned(tabId, pinned) {
-    if (!tabId) return;
-    try {
-      await api.tabs.update(tabId, { pinned });
-    } catch (_error) {
-      // Some internal URLs cannot be pinned/restored by extensions. The tab still opens.
-    }
-  }
-
-  async function updateWindowGeometry(windowId, windowSnapshot) {
-    const updateData = {};
-    for (const key of ["top", "left", "width", "height"]) {
-      if (typeof windowSnapshot[key] === "number" && Number.isFinite(windowSnapshot[key])) {
-        updateData[key] = windowSnapshot[key];
+    const windows = Array.isArray(snapshot.windows) ? snapshot.windows.slice().sort((a, b) => (a.index || 0) - (b.index || 0)) : [];
+    let shown = 0;
+    for (const windowSnapshot of windows) {
+      const tabs = Array.isArray(windowSnapshot.tabs) ? windowSnapshot.tabs.slice().sort((a, b) => (a.index || 0) - (b.index || 0)) : [];
+      for (const tab of tabs) {
+        shown += 1;
+        if (shown <= 20) {
+          lines.push(`${shown}. ${tab.title || tab.url || "Untitled"}${tab.pinned ? " [pinned]" : ""}`);
+          lines.push(`   ${tab.url || core.RESTORE_FALLBACK_URL}`);
+        }
       }
     }
-
-    if (Object.keys(updateData).length === 0) return;
-    try {
-      await api.windows.update(windowId, updateData);
-    } catch (_error) {
-      // Geometry updates can fail on minimized/fullscreen windows; restoring tabs is more important.
-    }
+    if (stats.tabCount > shown || stats.tabCount > 20) lines.push(`…and ${Math.max(0, stats.tabCount - 20)} more tab(s).`);
+    lines.push("", "Continue?");
+    return lines.join("\n");
   }
 
-  function normalizeWindowState(state) {
-    return ["normal", "minimized", "maximized", "fullscreen"].includes(state) ? state : "normal";
-  }
-
-  function restorableUrl(url) {
-    if (!url || typeof url !== "string") return "about:newtab";
-    try {
-      const parsed = new URL(url);
-      if (["http:", "https:", "ftp:", "file:"].includes(parsed.protocol)) return url;
-      if (parsed.protocol === "about:" && /^(about:blank|about:newtab|about:home)$/i.test(url)) return url;
-    } catch (_error) {
-      if (/^(about:blank|about:newtab|about:home)$/i.test(url)) return url;
-    }
-    return "about:newtab";
+  function formatRestoreSummary(result) {
+    const restoredText = `Restored ${result.createdTabs || 0} of ${result.requestedTabs || 0} tab(s) across ${result.createdWindows || 0} new window(s). Existing windows were left untouched.`;
+    const details = [];
+    if (result.restoredPinnedTabs) details.push(`${result.restoredPinnedTabs} pinned`);
+    if (result.fallbackTabs) details.push(`${result.fallbackTabs} opened as safe new-tab placeholders`);
+    if (result.failedTabs) details.push(`${result.failedTabs} failed`);
+    if (Array.isArray(result.warnings) && result.warnings.length > 0) details.push(result.warnings[0]);
+    return details.length > 0 ? `${restoredText} ${details.join(" • ")}.` : restoredText;
   }
 
   async function loadBookmarkIndex() {
@@ -519,6 +526,229 @@
     } finally {
       setBusy(elements.refreshBookmarks, false, "Refresh index");
     }
+  }
+
+  async function captureBookmarkSnapshot() {
+    setBusy(elements.captureBookmarks, true, "Capturing bookmarks…");
+    setStatus("", "Reading Firefox bookmark tree for point-in-time recovery snapshot…");
+    try {
+      const tree = await api.bookmarks.getTree();
+      const name = elements.bookmarkSnapshotName.value.trim() || `Firefox bookmarks ${new Date().toLocaleString()}`;
+      const snapshot = core.createBookmarkSnapshotFromTree(tree, { name });
+      if (snapshot.stats.bookmarkCount === 0 && snapshot.stats.folderCount === 0) {
+        throw new Error("No bookmarks were available to snapshot.");
+      }
+
+      state.bookmarkSnapshots.unshift(snapshot);
+      await persistBookmarkSnapshots();
+      if (elements.downloadAfterBookmarkCapture.checked) {
+        await downloadBookmarkSnapshot(snapshot, false);
+      }
+      elements.bookmarkSnapshotName.value = "";
+      renderBookmarkSnapshots();
+      setStatus("success", `Captured ${snapshot.stats.bookmarkCount} bookmark(s) and ${snapshot.stats.folderCount} folder(s).`);
+    } finally {
+      setBusy(elements.captureBookmarks, false, "Snapshot / export all bookmarks");
+    }
+  }
+
+  async function downloadBookmarkSnapshot(snapshot, saveAs) {
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+      type: "application/vnd.firefox-bookmark-snapshot+json"
+    });
+    const url = URL.createObjectURL(blob);
+    try {
+      await api.downloads.download({
+        url,
+        filename: core.fileNameForBookmarkSnapshot(snapshot),
+        saveAs,
+        conflictAction: "uniquify"
+      });
+    } finally {
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  }
+
+  async function importBookmarkSnapshotFile() {
+    const file = elements.bookmarkSnapshotFile.files && elements.bookmarkSnapshotFile.files[0];
+    if (!file) return;
+
+    const text = await readTextFile(file);
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (error) {
+      throw new Error(`Could not parse bookmark JSON: ${error.message}`);
+    }
+
+    const validation = core.validateBookmarkSnapshot(parsed);
+    if (!validation.valid) {
+      throw new Error(validation.errors.join(" "));
+    }
+
+    parsed.stats = core.countBookmarkSnapshotItems(parsed);
+    state.importedBookmarkSnapshot = parsed;
+    renderBookmarkImportSummary(parsed);
+    setStatus("success", `Imported bookmark snapshot ${parsed.name}. Review it before restoring.`);
+  }
+
+  function renderBookmarkImportSummary(snapshot) {
+    elements.bookmarkImportSummary.className = "import-summary";
+    elements.bookmarkImportSummary.textContent = "";
+
+    const title = document.createElement("h3");
+    title.textContent = snapshot.name;
+    const meta = document.createElement("p");
+    meta.textContent = `${formatDate(snapshot.createdAt)} • ${snapshot.stats.bookmarkCount} bookmarks • ${snapshot.stats.folderCount} folders`;
+    const preview = createBookmarkPreviewList(snapshot);
+    const actions = document.createElement("div");
+    actions.className = "action-row";
+    actions.append(
+      createImportButton("Restore bookmark snapshot", "restore-bookmarks-import", "ghost-button"),
+      createImportButton("Save bookmark snapshot", "save-bookmarks-import", "secondary-button")
+    );
+    elements.bookmarkImportSummary.append(title, meta, preview, actions);
+  }
+
+  function renderBookmarkSnapshots() {
+    elements.bookmarkSnapshotList.textContent = "";
+    if (state.bookmarkSnapshots.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "No saved bookmark snapshots yet.";
+      elements.bookmarkSnapshotList.appendChild(empty);
+      return;
+    }
+
+    for (const snapshot of state.bookmarkSnapshots) {
+      const card = document.createElement("article");
+      card.className = "snapshot-card";
+      const title = document.createElement("h3");
+      title.textContent = snapshot.name;
+      const meta = document.createElement("div");
+      meta.className = "meta-row";
+      const stats = snapshot.stats || core.countBookmarkSnapshotItems(snapshot);
+      meta.textContent = `${formatDate(snapshot.createdAt)} • ${stats.bookmarkCount} bookmarks • ${stats.folderCount} folders`;
+      const preview = createBookmarkPreviewList(snapshot, 8);
+      const actions = document.createElement("div");
+      actions.className = "action-row";
+      actions.append(
+        createActionButton("Restore", "restore-bookmarks", snapshot.id, "ghost-button"),
+        createActionButton("Export", "export-bookmarks", snapshot.id, "secondary-button"),
+        createActionButton("Delete", "delete-bookmarks", snapshot.id, "danger-button")
+      );
+      card.append(title, meta, preview, actions);
+      elements.bookmarkSnapshotList.appendChild(card);
+    }
+  }
+
+  function createBookmarkPreviewList(snapshot, limit = 10) {
+    const items = core.bookmarkSnapshotPreviewItems(snapshot, limit);
+    const list = document.createElement("ul");
+    list.className = "preview-list";
+    if (items.length === 0) {
+      const item = document.createElement("li");
+      item.textContent = "No preview items available.";
+      list.appendChild(item);
+      return list;
+    }
+    for (const previewItem of items) {
+      const item = document.createElement("li");
+      const title = document.createElement("span");
+      title.className = "preview-title";
+      title.textContent = `${previewItem.type === "folder" ? "Folder" : "Bookmark"}: ${previewItem.title}`;
+      const detail = document.createElement("span");
+      detail.textContent = previewItem.url || previewItem.path || "Bookmarks root";
+      item.append(title, detail);
+      list.appendChild(item);
+    }
+    return list;
+  }
+
+  async function handleBookmarkSnapshotAction(event) {
+    const button = event.target.closest("button[data-action]");
+    if (!button) return;
+    const snapshot = state.bookmarkSnapshots.find((item) => item.id === button.dataset.id);
+    if (!snapshot) return;
+
+    await runSafely(async () => {
+      if (button.dataset.action === "restore-bookmarks") {
+        await restoreBookmarkSnapshot(snapshot);
+      } else if (button.dataset.action === "export-bookmarks") {
+        await downloadBookmarkSnapshot(snapshot, true);
+        setStatus("success", `Exported bookmark snapshot ${snapshot.name}.`);
+      } else if (button.dataset.action === "delete-bookmarks") {
+        if (!window.confirm(`Delete bookmark snapshot “${snapshot.name}” from local storage? Export it first if you need a backup.`)) return;
+        state.bookmarkSnapshots = state.bookmarkSnapshots.filter((item) => item.id !== snapshot.id);
+        await persistBookmarkSnapshots();
+        renderBookmarkSnapshots();
+        setStatus("success", "Bookmark snapshot deleted from local storage.");
+      }
+    });
+  }
+
+  async function handleBookmarkImportAction(event) {
+    const button = event.target.closest("button[data-import-action]");
+    if (!button || !state.importedBookmarkSnapshot) return;
+
+    await runSafely(async () => {
+      if (button.dataset.importAction === "restore-bookmarks-import") {
+        await restoreBookmarkSnapshot(state.importedBookmarkSnapshot);
+      } else if (button.dataset.importAction === "save-bookmarks-import") {
+        const imported = core.clonePlainObject(state.importedBookmarkSnapshot);
+        if (state.bookmarkSnapshots.some((snapshot) => snapshot.id === imported.id)) {
+          imported.id = core.createId("imported-bookmarks");
+        }
+        imported.importedAt = new Date().toISOString();
+        imported.stats = core.countBookmarkSnapshotItems(imported);
+        state.bookmarkSnapshots.unshift(imported);
+        await persistBookmarkSnapshots();
+        renderBookmarkSnapshots();
+        setStatus("success", "Imported bookmark snapshot saved locally.");
+      }
+    });
+  }
+
+  async function restoreBookmarkSnapshot(snapshot) {
+    const validation = core.validateBookmarkSnapshot(snapshot);
+    if (!validation.valid) {
+      throw new Error(validation.errors.join(" "));
+    }
+    const stats = snapshot.stats || core.countBookmarkSnapshotItems(snapshot);
+    const previewLines = core.bookmarkSnapshotPreviewItems(snapshot, 20).map((item, index) =>
+      `${index + 1}. ${item.type === "folder" ? "Folder" : "Bookmark"}: ${item.title}${item.url ? `\n   ${item.url}` : item.path ? `\n   ${item.path}` : ""}`
+    );
+    const preview = [
+      `Restore bookmark snapshot “${snapshot.name || "bookmarks"}”?`,
+      "",
+      `${stats.bookmarkCount} bookmark(s) and ${stats.folderCount} folder(s) will be imported into a new bookmarks folder. Existing bookmarks will not be deleted or overwritten.`,
+      "",
+      "Preview:",
+      ...previewLines,
+      stats.bookmarkCount + stats.folderCount > 20 ? `…and more items.` : "",
+      "",
+      "Continue?"
+    ].filter(Boolean).join("\n");
+
+    if (!window.confirm(preview)) {
+      setStatus("", "Bookmark restore cancelled.");
+      return;
+    }
+
+    const response = await api.runtime.sendMessage({
+      type: RESTORE_BOOKMARKS_MESSAGE_TYPE,
+      snapshot: core.clonePlainObject(snapshot)
+    });
+    if (!response || response.ok !== true) {
+      throw new Error((response && response.error) || "The background bookmark restore worker did not return a successful response.");
+    }
+
+    const result = response.result || {};
+    setStatus(
+      result.failedItems ? "warning" : "success",
+      `Restored ${result.createdBookmarks || 0} bookmark(s) and ${result.createdFolders || 0} folder(s) into a new folder.${result.failedItems ? ` ${result.failedItems} item(s) failed.` : ""}`
+    );
+    await loadBookmarkIndex();
   }
 
   function renderBookmarkResults() {
@@ -556,8 +786,15 @@
     url.className = "bookmark-url";
     url.textContent = bookmark.url;
     const path = document.createElement("div");
-    path.className = "bookmark-path";
-    path.textContent = bookmark.path ? `Folder: ${bookmark.path}` : "Folder: root";
+    path.className = "bookmark-folder";
+    const folderLabel = document.createElement("span");
+    folderLabel.className = "bookmark-folder-label";
+    folderLabel.textContent = "Found in";
+    const folderPath = document.createElement("span");
+    folderPath.className = "bookmark-folder-path";
+    folderPath.textContent = core.bookmarkFolderLabel(bookmark);
+    path.title = core.bookmarkFolderLabel(bookmark);
+    path.append(folderLabel, folderPath);
     titleGroup.append(title, url, path);
 
     const score = document.createElement("span");

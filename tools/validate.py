@@ -9,6 +9,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+MIN_DATA_COLLECTION_FIREFOX = (140, 0)
+MIN_DATA_COLLECTION_FIREFOX_ANDROID = (142, 0)
+
+
+def parse_version_tuple(value: object) -> tuple[int, ...]:
+    if not isinstance(value, str):
+        return ()
+    parts: list[int] = []
+    for part in value.split("."):
+        if not part.isdigit():
+            break
+        parts.append(int(part))
+    return tuple(parts)
+
+
+def version_at_least(value: object, minimum: tuple[int, ...]) -> bool:
+    parsed = parse_version_tuple(value)
+    if not parsed:
+        return False
+    width = max(len(parsed), len(minimum))
+    return parsed + (0,) * (width - len(parsed)) >= minimum + (0,) * (width - len(minimum))
 
 
 def load_json(relative_path: str, errors: list[str]) -> dict:
@@ -59,6 +80,11 @@ def validate_project() -> list[str]:
     if not isinstance(data_collection_permissions, dict):
         errors.append("browser_specific_settings.gecko.data_collection_permissions is required by AMO.")
     else:
+        if not version_at_least(gecko.get("strict_min_version"), MIN_DATA_COLLECTION_FIREFOX):
+            errors.append("browser_specific_settings.gecko.strict_min_version must be at least 140.0 when using data_collection_permissions.")
+        gecko_android = manifest.get("browser_specific_settings", {}).get("gecko_android", {})
+        if not version_at_least(gecko_android.get("strict_min_version"), MIN_DATA_COLLECTION_FIREFOX_ANDROID):
+            errors.append("browser_specific_settings.gecko_android.strict_min_version must be at least 142.0 when using data_collection_permissions.")
         required_data = data_collection_permissions.get("required")
         optional_data = data_collection_permissions.get("optional", [])
         if not isinstance(required_data, list) or not required_data:
@@ -74,6 +100,12 @@ def validate_project() -> list[str]:
     else:
         errors.append("browser_action.default_popup is required.")
 
+    background_scripts = manifest.get("background", {}).get("scripts", [])
+    if background_scripts and not isinstance(background_scripts, list):
+        errors.append("manifest background.scripts must be a list when provided.")
+    for script in background_scripts if isinstance(background_scripts, list) else []:
+        check_file(script, errors)
+
     for size, icon_path in manifest.get("icons", {}).items():
         path = check_file(icon_path, errors)
         if path.exists() and path.read_bytes()[:8] != PNG_SIGNATURE:
@@ -82,7 +114,7 @@ def validate_project() -> list[str]:
     for size, icon_path in manifest.get("browser_action", {}).get("default_icon", {}).items():
         check_file(icon_path, errors)
 
-    for required in ("README.md", "LICENSE", "PRIVACY_POLICY.md", "PERMISSIONS.md", "src/core.js", "src/popup.js", "src/popup.html", "src/popup.css"):
+    for required in ("README.md", "LICENSE", "PRIVACY_POLICY.md", "PERMISSIONS.md", "src/core.js", "src/background.js", "src/popup.js", "src/popup.html", "src/popup.css"):
         check_file(required, errors)
 
     source_text = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in (ROOT / "src").glob("**/*") if path.is_file())

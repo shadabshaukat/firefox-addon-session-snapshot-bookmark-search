@@ -28,7 +28,7 @@ The uploadable package is created under `dist/`.
 1. Create or log in to an AMO developer account: <https://addons.mozilla.org/developers/>
 2. Choose **Submit a New Add-on**.
 3. Select **On this site** for public distribution.
-4. Upload `dist/session-snapshots-bookmark-search-0.1.0.zip`.
+4. Upload `dist/session-snapshots-bookmark-search-0.1.4.zip`.
 5. Use the permission justifications from `PERMISSIONS.md`.
 6. The manifest already declares `browser_specific_settings.gecko.data_collection_permissions.required` as `["none"]`.
 7. Use `PRIVACY_POLICY.md` as the privacy policy text or hosted privacy policy content.

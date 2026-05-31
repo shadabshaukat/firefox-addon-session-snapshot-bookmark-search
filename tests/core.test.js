@@ -54,12 +54,52 @@ function testBookmarkFlattenAndSearch() {
   const bookmarks = core.flattenBookmarks(tree);
   assert.strictEqual(bookmarks.length, 2);
   assert.strictEqual(bookmarks[0].path, "root / Dev");
+  assert.strictEqual(bookmarks[0].folderPath, "root / Dev");
+  assert.strictEqual(bookmarks[0].folderName, "Dev");
+  assert.strictEqual(core.bookmarkFolderLabel(bookmarks[0]), "root / Dev");
 
   const mdnResults = core.searchBookmarks(bookmarks, "mozila developer", { limit: 5 });
   assert.strictEqual(mdnResults[0].title, "MDN Web Docs");
 
   const siteResults = core.searchBookmarks(bookmarks, "addons", { limit: 5 });
   assert.strictEqual(siteResults[0].title, "Firefox Add-ons");
+}
+
+function testRestoreUrlSafety() {
+  assert.strictEqual(core.restorableUrl("https://example.com"), "https://example.com");
+  assert.strictEqual(core.restorableUrl("about:home"), "about:home");
+  assert.strictEqual(core.restorableUrl("about:config"), core.RESTORE_FALLBACK_URL);
+  assert.strictEqual(core.restorableUrl("javascript:alert(1)"), core.RESTORE_FALLBACK_URL);
+  assert.strictEqual(core.wasUrlSubstituted("about:config", core.restorableUrl("about:config")), true);
+  assert.strictEqual(core.normalizeWindowState("maximized"), "maximized");
+  assert.strictEqual(core.normalizeWindowState("weird"), "normal");
+}
+
+function testBookmarkSnapshotCreationAndValidation() {
+  const tree = [
+    {
+      title: "",
+      children: [
+        {
+          title: "Toolbar",
+          children: [
+            { title: "Example", url: "https://example.com", dateAdded: 1 },
+            { title: "Docs", children: [{ title: "MDN", url: "https://developer.mozilla.org", dateAdded: 2 }] }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const snapshot = core.createBookmarkSnapshotFromTree(tree, { name: "Bookmark backup" });
+  assert.strictEqual(snapshot.schema, core.BOOKMARK_SNAPSHOT_SCHEMA);
+  assert.strictEqual(snapshot.stats.bookmarkCount, 2);
+  assert.strictEqual(snapshot.stats.folderCount, 3);
+  assert.strictEqual(core.validateBookmarkSnapshot(snapshot).valid, true);
+  assert.ok(core.fileNameForBookmarkSnapshot(snapshot).endsWith(".ffbookmarks.json"));
+  const preview = core.bookmarkSnapshotPreviewItems(snapshot, 4);
+  assert.strictEqual(preview[0].type, "folder");
+  assert.strictEqual(preview.some((item) => item.title === "Example"), true);
 }
 
 function testFileName() {
@@ -72,6 +112,8 @@ function testFileName() {
 testSnapshotCreationAndValidation();
 testTimelineLinks();
 testBookmarkFlattenAndSearch();
+testRestoreUrlSafety();
+testBookmarkSnapshotCreationAndValidation();
 testFileName();
 
 console.log("All core tests passed.");

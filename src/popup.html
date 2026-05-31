@@ -61,8 +61,8 @@
         <section class="panel" id="panel-import" aria-labelledby="import-heading">
           <div class="card">
             <h2 id="import-heading">Import a session snapshot file</h2>
-            <p>Choose a <strong>.ffsession.json</strong> file exported by this extension. You can restore it immediately or add it to your local timeline.</p>
-            <input id="snapshotFile" type="file" accept=".ffsession.json,application/json" />
+            <p>Choose a <strong>.ffsession.json</strong> or JSON file exported by this extension. You can restore it immediately or add it to your local timeline.</p>
+            <input id="snapshotFile" type="file" accept=".ffsession.json,.json,application/json,application/vnd.firefox-session-snapshot+json" />
           </div>
 
           <div id="importSummary" class="import-summary empty-state">
@@ -81,6 +81,29 @@
             </div>
             <input id="bookmarkQuery" class="search-input" type="search" placeholder="Search bookmarks by title, site, URL, or folder…" autocomplete="off" />
             <div class="search-meta" id="bookmarkMeta">Bookmark index not loaded yet.</div>
+          </div>
+
+          <div class="card bookmark-recovery-card">
+            <div class="section-title-row">
+              <div>
+                <h2>Bookmark point-in-time recovery</h2>
+                <p>Export all bookmarks as a portable snapshot, import a bookmark snapshot file, and restore into a new folder without deleting existing bookmarks.</p>
+              </div>
+            </div>
+            <label class="field-label" for="bookmarkSnapshotName">Bookmark snapshot name</label>
+            <input id="bookmarkSnapshotName" type="text" placeholder="e.g. Bookmarks before cleanup" autocomplete="off" />
+            <label class="checkbox-row">
+              <input id="downloadAfterBookmarkCapture" type="checkbox" checked />
+              <span>Download bookmark snapshot file after capture</span>
+            </label>
+            <div class="action-row compact-actions">
+              <button class="primary-button inline-primary" id="captureBookmarks" type="button">Snapshot / export all bookmarks</button>
+              <button class="secondary-button" id="refreshBookmarkSnapshots" type="button">Refresh saved bookmark snapshots</button>
+            </div>
+            <label class="field-label" for="bookmarkSnapshotFile">Import bookmark snapshot</label>
+            <input id="bookmarkSnapshotFile" type="file" accept=".ffbookmarks.json,.json,application/json,application/vnd.firefox-bookmark-snapshot+json" />
+            <div id="bookmarkImportSummary" class="import-summary empty-state">No bookmark snapshot file selected yet.</div>
+            <div id="bookmarkSnapshotList" class="snapshot-list" aria-live="polite"></div>
           </div>
           <div id="bookmarkResults" class="bookmark-results" aria-live="polite"></div>
         </section>

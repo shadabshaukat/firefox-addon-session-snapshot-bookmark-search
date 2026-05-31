@@ -1,6 +1,6 @@
 # Session Snapshots & Bookmark Search
 
-A publishable Firefox WebExtension for macOS and Windows. It saves point-in-time browser sessions, including pinned tabs, as tagged timeline snapshots and provides a unified, ranked search UI for Firefox bookmarks.
+A publishable Firefox WebExtension for current Firefox releases on macOS, Windows, and Linux. It saves point-in-time browser sessions, including pinned tabs, as tagged timeline snapshots and provides a unified, ranked search UI for Firefox bookmarks.
 
 ## Features
 
@@ -10,9 +10,11 @@ A publishable Firefox WebExtension for macOS and Windows. It saves point-in-time
 - Add comma-separated tags such as `work, research, project-x`.
 - Link each snapshot to the previous global snapshot and previous snapshot for each matching tag.
 - Export snapshots as portable `.ffsession.json` files.
-- Import `.ffsession.json` files and restore them into new Firefox windows.
+- Import `.ffsession.json` or JSON files and restore them into new Firefox windows using a background restore worker so the operation can continue even if the popup closes.
 - Restore pinned tabs as pinned tabs where Firefox permits it.
-- Search all bookmarks by title, URL, hostname, and folder path with typo-tolerant ranking.
+- Search all bookmarks by title, URL, hostname, and folder path with typo-tolerant ranking, including a visible “Found in” folder path for each result.
+- Export, import, and restore point-in-time bookmark snapshots as portable `.ffbookmarks.json` files.
+- Preview tabs/bookmarks before restoring so you know exactly what will be imported.
 - No analytics, trackers, remote code, content scripts, or host permissions.
 
 
@@ -33,7 +35,7 @@ python3 tools/package.py
 The AMO uploadable ZIP is created at:
 
 ```text
-dist/session-snapshots-bookmark-search-0.1.0.zip
+dist/session-snapshots-bookmark-search-0.1.4.zip
 ```
 
 See `AMO_SUBMISSION.md` for the full Firefox Add-ons publishing checklist.
@@ -67,7 +69,7 @@ snapshot-name-YYYY-MM-DDTHH-MM-SS-sssZ.ffsession.json
 ### Restore a session
 
 - From the **Snapshots** tab, click **Restore** on a stored snapshot.
-- From **Import / Restore**, choose a `.ffsession.json` file and click **Restore imported snapshot**.
+- From **Import / Restore**, choose a `.ffsession.json` or compatible `.json` file and click **Restore imported snapshot**.
 
 Restores open into new windows so your current browser state is not destroyed.
 
@@ -76,6 +78,13 @@ Restores open into new windows so your current browser state is not destroyed.
 1. Open **Bookmark Search**.
 2. Type any title, folder, URL, hostname, or approximate spelling.
 3. Press **Enter** to open the top result or click **Open bookmark**.
+
+### Snapshot and restore bookmarks
+
+1. Open **Bookmark Search**.
+2. Use **Snapshot / export all bookmarks** to create a local bookmark recovery point and optional `.ffbookmarks.json` file.
+3. Use **Import bookmark snapshot** to load a `.ffbookmarks.json` file.
+4. Restore creates a new folder under your bookmarks and does not delete or overwrite existing bookmarks.
 
 ## Privacy
 

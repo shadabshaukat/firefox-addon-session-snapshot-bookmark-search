@@ -18,6 +18,17 @@ INCLUDE_FILES = [
     "PERMISSIONS.md"
 ]
 INCLUDE_DIRS = ["src", "assets"]
+EXCLUDED_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
+EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
+
+
+def is_package_file(path: Path) -> bool:
+    return (
+        path.is_file()
+        and path.name not in EXCLUDED_NAMES
+        and not any(path.name.endswith(suffix) for suffix in EXCLUDED_SUFFIXES)
+        and "__pycache__" not in path.parts
+    )
 
 
 def iter_package_files() -> list[Path]:
@@ -25,7 +36,7 @@ def iter_package_files() -> list[Path]:
     for relative in INCLUDE_FILES:
         files.append(ROOT / relative)
     for directory in INCLUDE_DIRS:
-        files.extend(path for path in (ROOT / directory).rglob("*") if path.is_file())
+        files.extend(path for path in (ROOT / directory).rglob("*") if is_package_file(path))
     return sorted(files, key=lambda path: path.relative_to(ROOT).as_posix())
 
 

@@ -219,6 +219,10 @@ select:focus {
   background: linear-gradient(135deg, var(--accent), #1e90ff);
 }
 
+.primary-button.inline-primary {
+  width: auto;
+}
+
 .secondary-button {
   color: var(--text);
   background: rgba(255, 255, 255, 0.09);
@@ -318,6 +322,39 @@ select:focus {
   font-size: 16px;
 }
 
+.bookmark-recovery-card {
+  margin: 12px 0;
+}
+
+.compact-actions {
+  margin: 8px 0 12px;
+}
+
+.preview-list {
+  display: grid;
+  gap: 6px;
+  max-height: 180px;
+  margin: 10px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.preview-list li {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 7px 9px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 12px;
+}
+
+.preview-title {
+  display: block;
+  color: var(--text);
+  font-weight: 800;
+}
+
 .search-meta {
   margin-top: 8px;
   color: var(--muted);
@@ -335,9 +372,27 @@ select:focus {
   word-break: break-all;
 }
 
-.bookmark-path {
+.bookmark-folder {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
   color: var(--muted);
   font-size: 12px;
+}
+
+.bookmark-folder-label {
+  border: 1px solid rgba(124, 92, 255, 0.26);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  font-weight: 800;
+}
+
+.bookmark-folder-path {
+  overflow-wrap: anywhere;
 }
 
 .score-badge {
