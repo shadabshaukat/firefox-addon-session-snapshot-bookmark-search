@@ -120,6 +120,23 @@
     };
   }
 
+  function applySnapshotRetention(items, limit) {
+    const source = Array.isArray(items) ? items.slice() : [];
+    const parsedLimit = Number.parseInt(limit, 10);
+    const ordered = source.sort((a, b) =>
+      new Date(b && (b.importedAt || b.createdAt) || 0) - new Date(a && (a.importedAt || a.createdAt) || 0)
+    );
+
+    if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+      return { kept: ordered, removed: [] };
+    }
+
+    return {
+      kept: ordered.slice(0, parsedLimit),
+      removed: ordered.slice(parsedLimit)
+    };
+  }
+
   function createSnapshotFromWindows(windows, metadata = {}) {
     const createdAt = metadata.createdAt || new Date().toISOString();
     const tags = normalizeTags(metadata.tags);
@@ -391,6 +408,77 @@
     return items;
   }
 
+  function compareBookmarkSnapshot(snapshot, currentTree, limit = 12) {
+    const snapshotBookmarks = flattenBookmarks(snapshot && snapshot.roots);
+    const currentBookmarks = flattenBookmarks(currentTree);
+    const maxItems = Number.isFinite(limit) ? Math.max(0, limit) : 12;
+    const currentByUrl = groupBookmarksByCanonicalUrl(currentBookmarks);
+    const snapshotUrls = new Set(snapshotBookmarks.map((bookmark) => canonicalBookmarkUrl(bookmark.url)));
+    const newItems = [];
+    const duplicateItems = [];
+    const changedItems = [];
+
+    for (const snapshotBookmark of snapshotBookmarks) {
+      const key = canonicalBookmarkUrl(snapshotBookmark.url);
+      const currentMatches = currentByUrl.get(key) || [];
+      if (currentMatches.length === 0) {
+        newItems.push(snapshotBookmark);
+        continue;
+      }
+
+      duplicateItems.push(snapshotBookmark);
+      const exactDetails = currentMatches.some((currentBookmark) =>
+        normalizeText(currentBookmark.title) === normalizeText(snapshotBookmark.title)
+        && normalizeText(bookmarkFolderLabel(currentBookmark)) === normalizeText(bookmarkFolderLabel(snapshotBookmark))
+      );
+      if (!exactDetails) {
+        changedItems.push({
+          snapshot: snapshotBookmark,
+          current: currentMatches[0]
+        });
+      }
+    }
+
+    const currentOnlyItems = currentBookmarks.filter((bookmark) => !snapshotUrls.has(canonicalBookmarkUrl(bookmark.url)));
+    return {
+      beforeCount: currentBookmarks.length,
+      snapshotCount: snapshotBookmarks.length,
+      afterCount: currentBookmarks.length + snapshotBookmarks.length,
+      newCount: newItems.length,
+      duplicateCount: duplicateItems.length,
+      changedCount: changedItems.length,
+      unchangedCount: Math.max(0, duplicateItems.length - changedItems.length),
+      currentOnlyCount: currentOnlyItems.length,
+      newItems: newItems.slice(0, maxItems),
+      duplicateItems: duplicateItems.slice(0, maxItems),
+      changedItems: changedItems.slice(0, maxItems),
+      currentOnlyItems: currentOnlyItems.slice(0, maxItems)
+    };
+  }
+
+  function groupBookmarksByCanonicalUrl(bookmarks) {
+    const grouped = new Map();
+    for (const bookmark of bookmarks || []) {
+      const key = canonicalBookmarkUrl(bookmark && bookmark.url);
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(bookmark);
+    }
+    return grouped;
+  }
+
+  function canonicalBookmarkUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed = new URL(raw);
+      parsed.hostname = parsed.hostname.toLowerCase();
+      if (parsed.pathname === "/") parsed.pathname = "";
+      return parsed.toString().replace(/\/$/, "");
+    } catch (_error) {
+      return normalizeText(raw).replace(/\/$/, "");
+    }
+  }
+
   function flattenBookmarks(nodes, parentPath = []) {
     const results = [];
     const bookmarkNodes = Array.isArray(nodes) ? nodes : [];
@@ -480,6 +568,9 @@
     const itemTokens = Array.isArray(bookmark.searchTokens)
       ? bookmark.searchTokens
       : Array.from(new Set(tokenize(combined)));
+    const titleTokens = tokenize(title);
+    const hostTokens = tokenize(host);
+    const pathTokens = tokenize(path);
 
     let score = 0;
     let matchedTokenCount = 0;
@@ -520,8 +611,21 @@
       matchedOn.add("folder");
     }
 
+    const compactQuery = queryTokens.join("");
+    if (queryTokens.length === 1 && compactQuery.length >= 2) {
+      const titleAcronym = acronymFor(titleTokens);
+      const pathAcronym = acronymFor(pathTokens);
+      if (titleAcronym === compactQuery || titleAcronym.startsWith(compactQuery)) {
+        score += titleAcronym === compactQuery ? 118 : 74;
+        matchedOn.add("title acronym");
+      } else if (pathAcronym === compactQuery || pathAcronym.startsWith(compactQuery)) {
+        score += pathAcronym === compactQuery ? 68 : 42;
+        matchedOn.add("folder acronym");
+      }
+    }
+
     for (const token of queryTokens) {
-      const tokenScore = rankToken({ token, title, url, host, path, itemTokens });
+      const tokenScore = rankToken({ token, title, url, host, path, itemTokens, titleTokens, hostTokens, pathTokens });
       if (tokenScore.score > 0) {
         matchedTokenCount += 1;
         score += tokenScore.score;
@@ -538,10 +642,8 @@
           matchedOn.add("fuzzy");
         }
       } else {
-        score += coverage * 55;
-        if (coverage < 0.5 && queryTokens.length > 2) {
-          score *= 0.62;
-        }
+        score += coverage === 1 ? 82 : coverage * 44;
+        if (coverage < 1) score *= 0.55 + coverage * 0.45;
       }
     }
 
@@ -553,7 +655,7 @@
     return { score, matchedOn: Array.from(matchedOn) };
   }
 
-  function rankToken({ token, title, url, host, path, itemTokens }) {
+  function rankToken({ token, title, url, host, path, itemTokens, titleTokens, hostTokens, pathTokens }) {
     let score = 0;
     const matchedOn = new Set();
     const tokenLength = token.length;
@@ -563,6 +665,12 @@
     if (title === token) {
       score += 95;
       matchedOn.add("title token");
+    } else if (titleTokens.includes(token)) {
+      score += 84;
+      matchedOn.add("title token");
+    } else if (titleTokens.some((titleToken) => titleToken.startsWith(token))) {
+      score += 70;
+      matchedOn.add("title prefix");
     } else if (title.startsWith(token)) {
       score += 76;
       matchedOn.add("title prefix");
@@ -574,6 +682,12 @@
     if (host === token) {
       score += 86;
       matchedOn.add("site token");
+    } else if (hostTokens.includes(token)) {
+      score += 76;
+      matchedOn.add("site token");
+    } else if (hostTokens.some((hostToken) => hostToken.startsWith(token))) {
+      score += 60;
+      matchedOn.add("site prefix");
     } else if (host.startsWith(token)) {
       score += 64;
       matchedOn.add("site prefix");
@@ -587,7 +701,13 @@
       matchedOn.add("url");
     }
 
-    if (tokenLength > 1 && path.includes(token)) {
+    if (tokenLength > 1 && pathTokens.includes(token)) {
+      score += 36;
+      matchedOn.add("folder");
+    } else if (tokenLength > 1 && pathTokens.some((pathToken) => pathToken.startsWith(token))) {
+      score += 30;
+      matchedOn.add("folder");
+    } else if (tokenLength > 1 && path.includes(token)) {
       score += 24;
       matchedOn.add("folder");
     }
@@ -601,6 +721,10 @@
     }
 
     return { score, matchedOn: Array.from(matchedOn) };
+  }
+
+  function acronymFor(tokens) {
+    return (tokens || []).filter(Boolean).map((token) => token[0]).join("");
   }
 
   function bestFuzzyScore(queryToken, itemTokens) {
@@ -652,9 +776,11 @@
     SNAPSHOT_SCHEMA_VERSION,
     SNAPSHOT_FILE_EXTENSION,
     RESTORE_FALLBACK_URL,
+    applySnapshotRetention,
     bookmarkFolderLabel,
     buildSnapshotLinks,
     clonePlainObject,
+    compareBookmarkSnapshot,
     countBookmarkSnapshotItems,
     countSnapshotTabs,
     createBookmarkSnapshotFromTree,

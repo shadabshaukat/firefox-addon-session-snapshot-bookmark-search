@@ -12,9 +12,10 @@ A publishable Firefox WebExtension for current Firefox releases on macOS, Window
 - Export snapshots as portable `.ffsession.json` files.
 - Import `.ffsession.json` or JSON files and restore them into new Firefox windows using a background restore worker so the operation can continue even if the popup closes.
 - Restore pinned tabs as pinned tabs where Firefox permits it.
-- Search all bookmarks by title, URL, hostname, and folder path with typo-tolerant ranking, including a visible “Found in” folder path for each result.
+- Search all bookmarks by title, URL, hostname, folder path, acronym, and approximate spelling with coverage-aware ranking, highlighted matches, and keyboard result selection.
 - Export, import, and restore point-in-time bookmark snapshots as portable `.ffbookmarks.json` files.
-- Preview tabs/bookmarks before restoring so you know exactly what will be imported.
+- Compare bookmark recovery points against current bookmarks with before/after counts, new URLs, duplicates, and changed title/folder details before restoring.
+- Configure automatic retention independently for session snapshots and bookmark recovery points.
 - No analytics, trackers, remote code, content scripts, or host permissions.
 
 
@@ -35,7 +36,7 @@ python3 tools/package.py
 The AMO uploadable ZIP is created at:
 
 ```text
-dist/session-snapshots-bookmark-search-0.1.4.zip
+dist/session-snapshots-bookmark-search-0.1.6.zip
 ```
 
 See `AMO_SUBMISSION.md` for the full Firefox Add-ons publishing checklist.
@@ -58,7 +59,8 @@ Temporary loading is only for testing. For public use, upload the package from `
 2. Enter a snapshot name.
 3. Enter tags separated by commas.
 4. Keep **Download snapshot file after capture** checked if you want a portable file.
-5. Click **Capture current Firefox session**.
+5. Optionally choose an automatic retention limit. **Keep all** remains the default.
+6. Click **Capture current Firefox session**.
 
 The exported file uses this naming pattern:
 
@@ -77,14 +79,18 @@ Restores open into new windows so your current browser state is not destroyed.
 
 1. Open **Bookmark Search**.
 2. Type any title, folder, URL, hostname, or approximate spelling.
-3. Press **Enter** to open the top result or click **Open bookmark**.
+3. Use the arrow keys to select a result, then press **Enter**, or click **Open**.
+
+The search tab is intentionally focused: it contains only the bookmark search field, result count, and ranked results.
 
 ### Snapshot and restore bookmarks
 
-1. Open **Bookmark Search**.
+1. Open **Bookmark Recovery**.
 2. Use **Snapshot / export all bookmarks** to create a local bookmark recovery point and optional `.ffbookmarks.json` file.
 3. Use **Import bookmark snapshot** to load a `.ffbookmarks.json` file.
-4. Restore creates a new folder under your bookmarks and does not delete or overwrite existing bookmarks.
+4. Use **Preview changes** to compare current, added, and after-restore bookmark counts and inspect new or duplicate URLs.
+5. Restore creates a new folder under your bookmarks and does not delete or overwrite existing bookmarks.
+6. Optionally set bookmark-snapshot retention; cleanup runs after the next capture or import.
 
 ## Privacy
 

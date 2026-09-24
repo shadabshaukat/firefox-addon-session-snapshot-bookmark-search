@@ -65,6 +65,74 @@ function testBookmarkFlattenAndSearch() {
   assert.strictEqual(siteResults[0].title, "Firefox Add-ons");
 }
 
+function testImprovedBookmarkRanking() {
+  const bookmarks = core.flattenBookmarks([
+    {
+      title: "root",
+      children: [
+        {
+          title: "Work",
+          children: [
+            { title: "Project Management Dashboard", url: "https://projects.example.com/dashboard", dateAdded: 1 },
+            { title: "Firefox Project Notes", url: "https://notes.example.com/firefox", dateAdded: 2 },
+            { title: "Firefox Recipes", url: "https://food.example.com/firefox", dateAdded: 3 }
+          ]
+        }
+      ]
+    }
+  ]);
+
+  const acronymResults = core.searchBookmarks(bookmarks, "pmd", { limit: 5 });
+  assert.strictEqual(acronymResults[0].title, "Project Management Dashboard");
+  assert.ok(acronymResults[0].matchedOn.includes("title acronym"));
+
+  const coverageResults = core.searchBookmarks(bookmarks, "firefox project", { limit: 5 });
+  assert.strictEqual(coverageResults[0].title, "Firefox Project Notes");
+}
+
+function testBookmarkDiff() {
+  const snapshot = core.createBookmarkSnapshotFromTree([
+    {
+      title: "",
+      children: [
+        { title: "Archived Example", url: "https://example.com/" },
+        { title: "MDN", url: "https://developer.mozilla.org" }
+      ]
+    }
+  ], { name: "Diff test" });
+  const currentTree = [
+    {
+      title: "",
+      children: [
+        { title: "Current Example", url: "https://example.com" },
+        { title: "OpenAI", url: "https://openai.com" }
+      ]
+    }
+  ];
+
+  const diff = core.compareBookmarkSnapshot(snapshot, currentTree);
+  assert.strictEqual(diff.beforeCount, 2);
+  assert.strictEqual(diff.snapshotCount, 2);
+  assert.strictEqual(diff.afterCount, 4);
+  assert.strictEqual(diff.newCount, 1);
+  assert.strictEqual(diff.duplicateCount, 1);
+  assert.strictEqual(diff.changedCount, 1);
+  assert.strictEqual(diff.currentOnlyCount, 1);
+  assert.strictEqual(diff.newItems[0].title, "MDN");
+}
+
+function testSnapshotRetention() {
+  const items = [
+    { id: "old", createdAt: "2024-01-01T00:00:00.000Z" },
+    { id: "new", createdAt: "2024-03-01T00:00:00.000Z" },
+    { id: "imported", createdAt: "2020-01-01T00:00:00.000Z", importedAt: "2024-04-01T00:00:00.000Z" }
+  ];
+  const limited = core.applySnapshotRetention(items, 2);
+  assert.deepStrictEqual(limited.kept.map((item) => item.id), ["imported", "new"]);
+  assert.deepStrictEqual(limited.removed.map((item) => item.id), ["old"]);
+  assert.strictEqual(core.applySnapshotRetention(items, 0).kept.length, 3);
+}
+
 function testRestoreUrlSafety() {
   assert.strictEqual(core.restorableUrl("https://example.com"), "https://example.com");
   assert.strictEqual(core.restorableUrl("about:home"), "about:home");
@@ -112,6 +180,9 @@ function testFileName() {
 testSnapshotCreationAndValidation();
 testTimelineLinks();
 testBookmarkFlattenAndSearch();
+testImprovedBookmarkRanking();
+testBookmarkDiff();
+testSnapshotRetention();
 testRestoreUrlSafety();
 testBookmarkSnapshotCreationAndValidation();
 testFileName();

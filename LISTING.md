@@ -10,7 +10,7 @@ Session Snapshots & Bookmark Search helps you preserve Firefox workspaces at imp
 
 Snapshots can be stored locally, exported as portable `.ffsession.json` files, imported later, and restored into new Firefox windows without destroying your current browsing state.
 
-The extension also includes a local unified bookmark search interface. It indexes bookmark title, URL, hostname, and folder path, then ranks results with exact, phrase, token, recency, and typo-tolerant matching.
+The extension also includes a local unified bookmark search interface. It indexes bookmark title, URL, hostname, and folder path, then ranks results with exact, phrase, token-coverage, acronym, recency, and typo-tolerant matching. Before bookmark recovery, a local comparison shows current and after-restore counts plus new URLs, duplicates, and differing details.
 
 ## Key features
 
@@ -19,7 +19,9 @@ The extension also includes a local unified bookmark search interface. It indexe
 - Save named, tagged snapshots in a local timeline.
 - Export/import portable `.ffsession.json` snapshot files.
 - Restore snapshots into new Firefox windows.
-- Search all bookmarks locally with ranked results.
+- Search all bookmarks locally with highlighted, keyboard-navigable ranked results.
+- Preview before/after bookmark recovery differences without changing existing bookmarks.
+- Configure automatic retention for session and bookmark snapshots.
 - No analytics, trackers, external services, or page content access.
 
 ## Tags

@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Session Snapshots & Bookmark Search",
   "short_name": "Session Snapshots",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "description": "Save and restore tagged Firefox tab sessions, including pinned tabs, and search bookmarks locally.",
   "icons": {
     "16": "assets/icons/icon-16.png",
