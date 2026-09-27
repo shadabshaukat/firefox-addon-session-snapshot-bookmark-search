@@ -24,22 +24,38 @@
   };
 
   const elements = {};
+  let initialized = false;
 
-  document.addEventListener("DOMContentLoaded", init);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
 
   async function init() {
+    if (initialized) return;
+    initialized = true;
     cacheElements();
     bindEvents();
+    renderSnapshots();
 
     if (!api) {
       setStatus("error", "Firefox WebExtension APIs are unavailable in this context.");
       return;
     }
 
-    await loadSettings();
-    await loadSnapshots();
+    setStatus("", "Loading saved snapshots…");
+    const startupResults = await Promise.allSettled([loadSettings(), loadSnapshots()]);
     renderSnapshots();
-    setStatus("success", "Ready. Capture a session or search your bookmarks.");
+    const startupErrors = startupResults
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason);
+    if (startupErrors.length > 0) {
+      startupErrors.forEach((error) => console.error(error));
+      setStatus("warning", "The popup opened with safe defaults, but some saved data could not be loaded. Close and reopen it to retry.");
+    } else {
+      setStatus("success", "Ready. Capture a session or search your bookmarks.");
+    }
   }
 
   function cacheElements() {

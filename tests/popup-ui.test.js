@@ -3,6 +3,8 @@ const fs = require("fs");
 const path = require("path");
 
 const html = fs.readFileSync(path.join(__dirname, "..", "src", "popup.html"), "utf8");
+const css = fs.readFileSync(path.join(__dirname, "..", "src", "popup.css"), "utf8");
+const popupScript = fs.readFileSync(path.join(__dirname, "..", "src", "popup.js"), "utf8");
 
 function panelMarkup(panelName) {
   const match = html.match(new RegExp(`<section[^>]+id="panel-${panelName}"[^>]*>([\\s\\S]*?)<\\/section>`));
@@ -51,10 +53,28 @@ function testIdsAreUnique() {
   assert.strictEqual(new Set(ids).size, ids.length, "Popup element IDs must be unique.");
 }
 
+function testStablePopupWidth() {
+  const bodyRules = Array.from(css.matchAll(/(?:^|\n)body\s*\{([^}]*)\}/g), (match) => match[1]);
+  const widthDeclarations = bodyRules.flatMap((rule) =>
+    Array.from(rule.matchAll(/(?:^|;)\s*width:\s*([^;]+);/g), (match) => match[1].trim())
+  );
+  assert.deepStrictEqual(widthDeclarations, ["780px"], "Popup body width must stay fixed at the proven 0.1.4 size.");
+  assert.ok(!bodyRules.some((rule) => /max-width\s*:/.test(rule)), "Popup body must not be capped by the initial viewport.");
+  assert.ok(!css.includes("width: 100vw"), "Responsive rules must not collapse the Firefox popup width.");
+}
+
+function testResilientStartup() {
+  assert.ok(popupScript.includes('document.readyState === "loading"'));
+  assert.ok(popupScript.includes("Promise.allSettled([loadSettings(), loadSnapshots()])"));
+  assert.ok(popupScript.includes("popup opened with safe defaults"));
+}
+
 testTabStructure();
 testSearchIsFocused();
 testRecoveryIsSeparate();
 testRetentionAndDiffControls();
 testIdsAreUnique();
+testStablePopupWidth();
+testResilientStartup();
 
 console.log("All popup UI structure tests passed.");

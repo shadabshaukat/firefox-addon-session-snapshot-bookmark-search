@@ -1,6 +1,6 @@
 # Brand Assets
 
-Professional website/listing icon assets are in `assets/brand/`:
+Monochrome website/listing logo assets are in `assets/brand/`:
 
 - `assets/brand/session-snapshots-icon.svg` — scalable source icon for websites and marketing pages.
 - `assets/brand/session-snapshots-icon-1024.png` — high-resolution PNG for website hero sections or press kits.
@@ -16,11 +16,7 @@ Firefox manifest icons are generated from the same visual style in `assets/icons
 
 ## Design concept
 
-The icon combines:
-
-- stacked cards for saved browser sessions,
-- a pin marker for pinned tabs,
-- connected dots for time-series snapshots,
-- a magnifying glass for unified bookmark search.
-
-The color palette uses Firefox-friendly purple/blue gradients with a green productivity accent.
+The mark is a bold geometric **SS** monogram for Session Snapshots. It uses a
+flat muted-indigo tile, a slightly lighter one-hue border, and off-white letter
+strokes. The simplified silhouette is intentionally free of gradients and tiny
+details so it remains calm, distinctive, and legible in Firefox at 16px.

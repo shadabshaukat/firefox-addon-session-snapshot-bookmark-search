@@ -36,7 +36,7 @@ python3 tools/package.py
 The AMO uploadable ZIP is created at:
 
 ```text
-dist/session-snapshots-bookmark-search-0.1.6.zip
+dist/session-snapshots-bookmark-search-0.1.8.zip
 ```
 
 See `AMO_SUBMISSION.md` for the full Firefox Add-ons publishing checklist.
